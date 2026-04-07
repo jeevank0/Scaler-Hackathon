@@ -1,0 +1,73 @@
+environment:
+  name: farmrl-phase1
+  version: 0.1.0
+  description: Minimal FarmRL OpenEnv implementation for Round-1 Phase-1.
+  api:
+    reset: POST /reset
+    step: POST /step
+    state: GET /state
+
+observation_schema:
+  type: object
+  required:
+    - soil_moisture
+    - soil_ph
+    - temperature
+    - rainfall
+    - crop_stage
+    - day
+  properties:
+    soil_moisture:
+      type: number
+      minimum: 0
+      maximum: 100
+    soil_ph:
+      type: number
+      minimum: 4
+      maximum: 9
+    temperature:
+      type: number
+    rainfall:
+      type: number
+      minimum: 0
+    crop_stage:
+      type: integer
+      minimum: 0
+    day:
+      type: integer
+      minimum: 0
+
+action_schema:
+  type: object
+  required:
+    - water
+    - fertilizer
+    - pesticide
+  properties:
+    water:
+      type: number
+      minimum: 0
+      maximum: 50
+    fertilizer:
+      type: number
+      minimum: 0
+      maximum: 20
+    pesticide:
+      type: number
+      minimum: 0
+      maximum: 10
+
+reward_schema:
+  type: number
+  description: yield_score + sustainability_bonus - resource_penalty
+
+tasks:
+  - id: task_easy_yield
+    difficulty: easy
+    description: Maximize agronomic yield performance using normalized total reward.
+  - id: task_medium_chemical_efficiency
+    difficulty: medium
+    description: Minimize total fertilizer and pesticide while maintaining productivity.
+  - id: task_hard_sustainability_balance
+    difficulty: hard
+    description: Optimize the long-term yield-to-chemical-use balance ratio.
