@@ -1,0 +1,27 @@
+# Environment files
+.env
+.env.*
+
+# Python environments
+.venv/
+venv/
+env/
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS/editor noise
+.DS_Store
+.vscode/
+
+# Logs and temp
+*.log
+tmp/
