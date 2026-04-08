@@ -250,17 +250,3 @@ docker build -t farmrl-openenv .
 docker run -p 7860:7860 farmrl-openenv
 ```
 
-## References
-
-- [OpenEnv Framework](https://github.com/openenv-ai/openenv)
-- [FarmGym Simulation](https://github.com/farm-gym)
-- Dataset: Real agricultural data with crop yield observations
-docker build -t farmrl-openenv .
-docker run -p 7860:7860 farmrl-openenv
-```
-
-## References
-
-- [OpenEnv Framework](https://github.com/openenv-ai/openenv)
-- [FarmGym Simulation](https://github.com/farm-gym)
-- Dataset: Real agricultural data with crop yield observations
