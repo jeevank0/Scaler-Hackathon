@@ -1,118 +1,158 @@
-# FarmRL OpenEnv Environment
+---
+title: FarmRL OpenEnv Submission
+emoji: 🌾
+colorFrom: green
+colorTo: blue
+sdk: docker
+pinned: false
+---
+# FarmRL OpenEnv Submission
+
+A reinforcement learning environment and agent for optimizing farm management decisions using the OpenEnv framework.
 
 ## Overview
 
-FarmRL simulates real-world crop operations where an agent chooses daily irrigation, fertilizer, and pesticide actions to improve productivity while preserving sustainability. This is a practical farm-operations decision problem, not a game task.
+FarmRL trains an intelligent agent to manage crop farming decisions by controlling irrigation, fertilizer application, and pesticide use. The agent learns from a real agricultural dataset and aims to maximize crop yield while maintaining sustainability.
 
-The environment is OpenEnv-compatible and exposes typed state/action/reward models with API endpoints for reset, step, and state retrieval.
+**Key Features:**
+- OpenEnv-compliant REST API for environment interaction
+- LLM-based inference via OpenAI-compatible endpoints
+- Tabular RL training with preprocessing pipeline
+- Grading and evaluation framework
 
-## Motivation
+## Quick Start
 
-Farm operations require balancing short-term yield goals with long-term soil and resource health. This environment provides a deterministic, reproducible benchmark for evaluating whether an LLM can make adaptive control decisions under changing weather and soil conditions.
+### Prerequisites
+- Python 3.11+
+- `uv` package manager (recommended) or pip
+- Environment variables configured (see Configuration section)
 
-## Observation Space
+### Installation
 
-Observation is represented by `FarmState`:
+```bash
+uv pip install -e .
+```
 
-- `soil_moisture` (0-100)
-- `soil_ph` (4-9)
-- `temperature` (float)
-- `rainfall` (>=0)
-- `crop_stage` (int, >=0)
-- `day` (int, >=0)
-
-## Action Space
-
-Action is represented by `FarmAction`:
-
-- `water` in [0, 50]
-- `fertilizer` in [0, 20]
-- `pesticide` in [0, 10]
-
-## Reward Design
-
-Reward is provided at every step and includes:
-
-- Positive yield progress (`yield_score`)
-- Sustainability encouragement (`sustainability_bonus`)
-- Resource overuse penalty (`resource_penalty`)
-- Explicit penalties for excessive chemical usage (`overuse_penalty`)
-- Explicit loop/stall penalty (`loop_penalty`)
-
-This gives dense trajectory feedback and discourages destructive/repetitive behavior.
-
-## Tasks and Difficulty
-
-Three deterministic grader tasks are provided:
-
-1. `task_easy_yield` (easy): maximize normalized total reward.
-2. `task_medium_chemical_efficiency` (medium): minimize aggregate fertilizer + pesticide usage.
-3. `task_hard_sustainability_balance` (hard): optimize yield-to-chemical-use ratio.
-
-Each grader returns a score in [0.0, 1.0].
-
-## OpenEnv Interface
-
-API endpoints:
-
-- `POST /reset`
-- `POST /step`
-- `GET /state`
-
-`step(action)` returns `observation`, `reward`, `done`, `info`.
-
-OpenEnv metadata is declared in `openenv.yaml`.
-
-## Setup
-
-1. Create and activate a virtual environment.
-2. Install dependencies:
-
+Or with pip:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Configure `.env`:
+### Configuration
 
-- `API_BASE_URL=https://api.openai.com/v1`
-- `MODEL_NAME=gpt-4o-mini`
-- `OPENAI_API_KEY=<your_key>`
+Create a `.env` file in the project root with required credentials:
 
-## Usage
-
-Run baseline inference:
-
-```bash
-python inference.py
+```env
+# API Configuration (defaults provided for base URL and model)
+API_BASE_URL=https://api.openai.com/v1
+MODEL_NAME=gpt-4o-mini
+TASK_NAME=farm-yield-optimization
+BENCHMARK=farmrl
+PORT=7860
+# Required API Credentials (no defaults)
+OPENAI_API_KEY=your_api_key_here
 ```
 
-Run API server:
+**Environment Variables:**
+- `API_BASE_URL`: LLM endpoint URL (default: `https://api.openai.com/v1`)
+- `MODEL_NAME`: Model identifier (default: `gpt-4o-mini`)
+- `TASK_NAME`: Task identifier (default: `farm-yield-optimization`)
+- `BENCHMARK`: Benchmark name (default: `farmrl`)
+- `PORT`: Server port (default: `7860`)
+- `OPENAI_API_KEY`: Your OpenAI API key (required, no default)
+
+### Running the API Server
+
+Start the OpenEnv API server on your configured port:
 
 ```bash
-uvicorn api.main:app --host 0.0.0.0 --port 7860
+uv run python -m server.app
 ```
 
-## Baseline Scores
+The server will be available at `http://localhost:7860`
 
-Typical baseline output includes an `[END]` line with score and rewards. Example from a recent run:
+### Running Inference
 
-- `overall score`: 0.564
-- `steps`: 60
-
-Task-level baseline scores are reported by `tasks/graders.py` and constrained to [0.0, 1.0].
-
-## Container and Deployment
-
-Build container:
+Execute the full inference pipeline:
 
 ```bash
-docker build -t farmrl-space-check:latest .
+uv run python inference.py
 ```
 
-Run container:
+This runs the agent against the environment, logging results to stdout in the standard format:
+- `[START]` - Episode initialization
+- `[STEP]` - Individual step results
+- `[END]` - Episode completion with score
+
+## Project Structure
+
+```
+.
+├── api/              # REST API endpoints
+├── env/              # FarmRL environment implementation
+├── server/           # API server setup
+├── tasks/            # Grading and evaluation
+├── scripts/          # Data preprocessing utilities
+├── reference-material/  # Documentation and examples
+├── inference.py      # Main inference script
+├── openenv.yaml      # Environment schema definition
+├── requirements.txt  # Python dependencies
+└── farmer_advisor_dataset.csv  # Agricultural training data
+```
+
+## Environment Specification
+
+The environment state and action spaces are defined in `openenv.yaml`:
+
+**Observations:**
+- `soil_moisture`: Soil water availability (0-100%)
+- `soil_ph`: Soil acidity (4-9)
+- `temperature`: Environmental temperature
+- `rainfall`: Precipitation amount (mm)
+- `crop_stage`: Current crop growth stage
+- `day`: Days since planting
+
+**Actions:**
+- `water`: Irrigation amount (0-50 mm)
+- `fertilizer`: Fertilizer application
+- `pesticide`: Pesticide application
+
+## API Endpoints
+
+- `POST /reset` - Reset environment (optional seed parameter)
+- `POST /step` - Execute action and get next state
+- `GET /state` - Get current environment state
+- `GET /health` - Health check
+
+## Data Pipeline
+
+The project includes a preprocessing script (`scripts/add_water_variable.py`) that:
+1. Adds a `Water_mm` column representing agent-controllable irrigation
+2. Adjusts `Rainfall_mm` to maintain water-balance invariance
+
+Run preprocessing:
+```bash
+uv run python scripts/add_water_variable.py farmer_advisor_dataset.csv
+```
+
+## Evaluation
+
+The grading system (`tasks/graders.py`) evaluates agent performance based on:
+- Crop yield optimization
+- Sustainability metrics
+- Action validity
+
+## Docker
+
+The project includes a Dockerfile for containerized deployment:
 
 ```bash
-docker run --rm -p 7860:7860 farmrl-space-check:latest
+docker build -t farmrl-openenv .
+docker run -p 7860:7860 farmrl-openenv
 ```
 
-This image is suitable for Hugging Face Space deployment.
+## References
+
+- [OpenEnv Framework](https://github.com/openenv-ai/openenv)
+- [FarmGym Simulation](https://github.com/farm-gym)
+- Dataset: Real agricultural data with crop yield observations
