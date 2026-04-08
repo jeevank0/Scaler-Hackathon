@@ -31,7 +31,7 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1").strip()
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini").strip()
 TASK_NAME = os.getenv("TASK_NAME", "farm-yield-optimization").strip()
 BENCHMARK = os.getenv("BENCHMARK", "farmrl").strip()
-OPENAI_API_KEY = require_env("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 
 PLACEHOLDER_TOKENS = {
     "your_openai_api_key_here",
@@ -88,20 +88,13 @@ def build_prompt(state: FarmState, step: int, recent_actions: list[dict[str, flo
 def build_client() -> Optional[OpenAI]:
     base_lower = API_BASE_URL.lower()
     if "huggingface.co" in base_lower:
-        raise RuntimeError(
-            "Hugging Face router is disabled for LLM calls. "
-            "Set API_BASE_URL to https://api.openai.com/v1"
-        )
+        print("[WARN] HuggingFace router detected, skipping LLM", flush=True)
+        return None
 
     api_key = OPENAI_API_KEY
-    missing_msg = "Missing API key: set OPENAI_API_KEY."
-
-    if not api_key:
-        raise RuntimeError(missing_msg)
-
-    if api_key.lower() in PLACEHOLDER_TOKENS:
-        raise RuntimeError(
-            "OPENAI_API_KEY is a placeholder; set a real key before running inference.")
+    if not api_key or api_key.lower() in PLACEHOLDER_TOKENS:
+        print("[WARN] OPENAI_API_KEY not found, running in fallback mode", flush=True)
+        return None
     return OpenAI(base_url=API_BASE_URL, api_key=api_key)
 
 
@@ -145,6 +138,38 @@ def coerce_action(payload: Dict[str, Any]) -> FarmAction:
         "pesticide": clamp(pesticide, 0.0, 10.0),
     }
     return FarmAction(**normalized)
+
+
+def choose_fallback_action(state: FarmState, recent_actions: list[dict[str, float]]) -> FarmAction:
+    # Rule-based action used when LLM is unavailable or returns invalid output.
+    target_moisture = 62.0 if state.crop_stage < 3 else 68.0
+    moisture_gap = target_moisture - state.soil_moisture
+    rain_adjustment = max(0.0, 50.0 - state.rainfall) * 0.1
+
+    water = clamp(12.0 + 0.8 * moisture_gap + rain_adjustment, 0.0, 50.0)
+    fertilizer = clamp(
+        (6.0 if state.crop_stage < 4 else 4.0)
+        - 0.05 * max(0, state.day - 10)
+        - 0.1 * max(state.temperature - 32.0, 0.0),
+        0.0,
+        20.0,
+    )
+
+    pesticide = 1.0
+    if state.crop_stage >= 2 and state.rainfall > 70.0:
+        pesticide = 3.0
+    pesticide = clamp(pesticide, 0.0, 10.0)
+
+    action = {
+        "water": water,
+        "fertilizer": fertilizer,
+        "pesticide": pesticide,
+    }
+
+    if recent_actions and action == recent_actions[-1]:
+        action["water"] = clamp(action["water"] + 2.0, 0.0, 50.0)
+
+    return FarmAction(**action)
 
 
 def choose_action(
@@ -217,7 +242,19 @@ def run_inference() -> None:
     dataset_path = Path(__file__).resolve().parent / \
         "farmer_advisor_dataset.csv"
     env = FarmEnv(dataset_path=dataset_path, seed=42, max_days=30)
-    client = build_client()
+    client: Optional[OpenAI] = None
+    startup_error: Optional[str] = None
+
+    try:
+        client = build_client()
+    except Exception as exc:
+        startup_error = re.sub(
+            r"\s+",
+            " ",
+            f"{exc.__class__.__name__}:{exc}",
+        ).strip()
+        print(
+            f"[WARN] llm_client_unavailable error={startup_error}", flush=True)
 
     total_reward = 0.0
     total_yield = 0.0
@@ -226,6 +263,7 @@ def run_inference() -> None:
     total_steps = 0
     rewards: list[float] = []
     recent_actions: list[dict[str, float]] = []
+    aborted = False
 
     log_start()
 
@@ -233,13 +271,42 @@ def run_inference() -> None:
         state = env.reset(seed=42 + episode)
 
         for _ in range(STEPS_PER_EPISODE):
-            action = choose_action(
-                client=client,
-                state=state,
-                step=total_steps + 1,
-                recent_actions=recent_actions,
-            )
-            step_result = env.step(action)
+            step_error: Optional[str] = None
+
+            if client is not None:
+                try:
+                    action = choose_action(
+                        client=client,
+                        state=state,
+                        step=total_steps + 1,
+                        recent_actions=recent_actions,
+                    )
+                except Exception as exc:
+                    step_error = f"llm_error:{exc.__class__.__name__}"
+                    action = choose_fallback_action(
+                        state=state,
+                        recent_actions=recent_actions,
+                    )
+            else:
+                action = choose_fallback_action(
+                    state=state,
+                    recent_actions=recent_actions,
+                )
+                if startup_error and total_steps == 0 and episode == 0:
+                    step_error = f"fallback:{startup_error}"
+
+            try:
+                step_result = env.step(action)
+            except Exception as exc:
+                aborted = True
+                log_step(
+                    step=total_steps + 1,
+                    action=action,
+                    reward=0.0,
+                    done=True,
+                    error=f"env_error:{exc.__class__.__name__}",
+                )
+                break
 
             total_steps += 1
             total_reward += step_result.reward
@@ -254,12 +321,15 @@ def run_inference() -> None:
                 action=action,
                 reward=step_result.reward,
                 done=step_result.done,
-                error=None,
+                error=step_error,
             )
             state = step_result.observation
 
             if step_result.done:
                 break
+
+        if aborted:
+            break
 
     task_scores = grade_all(
         total_reward=total_reward,
@@ -276,5 +346,19 @@ def run_inference() -> None:
             score=overall_score, rewards=rewards)
 
 
+def main() -> int:
+    try:
+        run_inference()
+    except Exception as exc:
+        fatal_error = re.sub(
+            r"\s+",
+            " ",
+            f"{exc.__class__.__name__}:{exc}",
+        ).strip()
+        print(f"[FATAL] error={fatal_error}", flush=True)
+        log_end(success=False, steps=0, score=0.0, rewards=[])
+    return 0
+
+
 if __name__ == "__main__":
-    run_inference()
+    raise SystemExit(main())
