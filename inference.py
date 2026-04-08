@@ -27,11 +27,11 @@ def require_env(name: str) -> str:
     return value
 
 
-API_BASE_URL = require_env("API_BASE_URL")
-MODEL_NAME = require_env("MODEL_NAME")
-TASK_NAME = require_env("TASK_NAME")
-BENCHMARK = require_env("BENCHMARK")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1").strip()
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini").strip()
+TASK_NAME = os.getenv("TASK_NAME", "farm-yield-optimization").strip()
+BENCHMARK = os.getenv("BENCHMARK", "farmrl").strip()
+OPENAI_API_KEY = require_env("OPENAI_API_KEY")
 
 PLACEHOLDER_TOKENS = {
     "your_openai_api_key_here",

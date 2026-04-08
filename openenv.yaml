@@ -7,6 +7,13 @@ environment:
     step: POST /step
     state: GET /state
 
+defaults:
+  API_BASE_URL: https://api.openai.com/v1
+  MODEL_NAME: gpt-4o-mini
+  TASK_NAME: farm-yield-optimization
+  BENCHMARK: farmrl
+  PORT: 7860
+
 observation_schema:
   type: object
   required:
