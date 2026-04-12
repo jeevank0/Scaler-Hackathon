@@ -97,7 +97,8 @@ def build_prompt(state: FarmState, step: int, recent_actions: list[dict[str, flo
 
 def build_client() -> Optional[OpenAI]:
     if not API_BASE_URL:
-        raise RuntimeError("Missing required environment variable 'API_BASE_URL'.")
+        raise RuntimeError(
+            "Missing required environment variable 'API_BASE_URL'.")
 
     base_lower = API_BASE_URL.lower()
     if "huggingface.co" in base_lower:
@@ -194,11 +195,14 @@ def choose_fallback_action(state: FarmState, recent_actions: list[dict[str, floa
 
 
 def choose_action(
-    client: OpenAI,
+    client: Optional[OpenAI],
     state: FarmState,
     step: int,
     recent_actions: list[dict[str, float]],
 ) -> FarmAction:
+    if client is None:
+        raise RuntimeError("llm_client_unavailable")
+
     prompt = build_prompt(state, step=step, recent_actions=recent_actions)
     completion = client.chat.completions.create(
         model=MODEL_NAME,
@@ -263,7 +267,14 @@ def run_inference() -> None:
     dataset_path = Path(__file__).resolve().parent / \
         "farmer_advisor_dataset.csv"
     env = FarmEnv(dataset_path=dataset_path, seed=42, max_days=30)
-    client = build_client()
+    try:
+        client = build_client()
+    except Exception as exc:
+        client = None
+        print(
+            f"[WARN] llm_client_init_failed error={exc.__class__.__name__}",
+            flush=True,
+        )
 
     total_reward = 0.0
     total_yield = 0.0
@@ -297,7 +308,7 @@ def run_inference() -> None:
             except Exception as exc:
                 llm_failures += 1
                 step_error = f"llm_error:{exc.__class__.__name__}"
-                raise RuntimeError(step_error) from exc
+                action = choose_fallback_action(state, recent_actions)
 
             try:
                 step_result = env.step(action)
