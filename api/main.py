@@ -92,29 +92,37 @@ def schema() -> dict[str, dict[str, Any]]:
 @app.get("/tasks")
 def tasks() -> dict[str, Any]:
     """Return all available tasks with grader associations.
-    
+
     OpenEnv requires each submission to declare minimum 3 tasks,
     each associated with a grading function.
     """
+    task_items = get_all_tasks()
+    grader_map = {
+        item["id"]: item.get("grader")
+        for item in task_items
+        if item.get("id") and item.get("grader")
+    }
     return {
-        "tasks": get_all_tasks(),
+        "tasks": task_items,
+        "graders": grader_map,
+        "tasks_with_graders": len(grader_map),
     }
 
 
 @app.post("/grader", response_model=GraderResponse)
 def grader(payload: GraderRequest) -> GraderResponse:
     """Evaluate an episode result against a specific task.
-    
+
     Accepts episode metrics, normalizes the reward to a standard scoring scale
     ([0, 1]), evaluates against difficulty-level thresholds, and returns the
     normalized score, pass status, and feedback.
-    
+
     Args:
         payload: Episode result with task_id and episode metrics
-    
+
     Returns:
         GraderResponse with score, pass status, and feedback
-    
+
     Raises:
         HTTPException 400: If task_id is not recognized
     """
@@ -126,13 +134,13 @@ def grader(payload: GraderRequest) -> GraderResponse:
         total_pesticide=payload.total_pesticide,
         total_steps=payload.total_steps,
     )
-    
+
     if result is None:
         raise HTTPException(
             status_code=400,
             detail=f"Task '{payload.task_id}' not found or grader unavailable.",
         )
-    
+
     return GraderResponse(**result.to_dict())
 
 
