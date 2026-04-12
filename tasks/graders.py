@@ -62,14 +62,45 @@ def grade_sustainability_balance(
     }
 
 
+def grade_soil_health(
+    avg_soil_moisture: float = 0.0,
+    avg_soil_ph: float = 6.5,
+) -> Dict[str, float | str]:
+    """Grade soil health monitoring based on moisture and pH stability.
+    
+    Optimal range:
+    - Soil moisture: 30-70% (too dry < 20%, too wet > 80%)
+    - Soil pH: 6.0-7.5 (acidic < 5.5, alkaline > 8.0)
+    """
+    # Moisture score: peaks at 50%, penalizes extremes
+    moisture_ideal = 50.0
+    moisture_deviation = abs(avg_soil_moisture - moisture_ideal)
+    moisture_score = 1.0 - _clamp01(moisture_deviation / 50.0)
+    
+    # pH score: peaks at 6.8 (neutral), acceptable range 6.0-7.5
+    ph_ideal = 6.8
+    ph_deviation = abs(avg_soil_ph - ph_ideal)
+    ph_score = 1.0 - _clamp01(ph_deviation / 1.5)
+    
+    # Combined score (equal weight)
+    score = _clamp01((moisture_score + ph_score) / 2.0)
+    
+    return {
+        "task_id": "task_expert_soil_health",
+        "score": score,
+    }
+
+
 def grade_all(
     total_reward: float = 0.0,
     total_yield: float = 0.0,
     total_fertilizer: float = 0.0,
     total_pesticide: float = 0.0,
     total_steps: int = 0,
+    avg_soil_moisture: float = 50.0,
+    avg_soil_ph: float = 6.8,
 ) -> Dict[str, Dict[str, float | str]]:
-    """Return scores for all tasks in one call."""
+    """Return scores for all 4 tasks in one call."""
     return {
         "task_easy_yield": grade_yield_performance(
             total_reward=total_reward,
@@ -84,5 +115,9 @@ def grade_all(
             total_yield=total_yield,
             total_fertilizer=total_fertilizer,
             total_pesticide=total_pesticide,
+        ),
+        "task_expert_soil_health": grade_soil_health(
+            avg_soil_moisture=avg_soil_moisture,
+            avg_soil_ph=avg_soil_ph,
         ),
     }

@@ -12,6 +12,7 @@ from tasks.graders import (
     grade_yield_performance,
     grade_chemical_efficiency,
     grade_sustainability_balance,
+    grade_soil_health,
 )
 from tasks.task_definitions import get_task_by_id
 
@@ -21,6 +22,7 @@ PASS_THRESHOLDS = {
     "easy": 0.30,
     "medium": 0.50,
     "hard": 0.70,
+    "expert": 0.80,
 }
 
 # Task-to-grader function mapping
@@ -28,6 +30,7 @@ GRADER_FUNCTIONS = {
     "task_easy_yield": grade_yield_performance,
     "task_medium_chemical_efficiency": grade_chemical_efficiency,
     "task_hard_sustainability_balance": grade_sustainability_balance,
+    "task_expert_soil_health": grade_soil_health,
 }
 
 
@@ -66,6 +69,8 @@ def evaluate_episode(
     total_fertilizer: float = 0.0,
     total_pesticide: float = 0.0,
     total_steps: int = 0,
+    avg_soil_moisture: float = 50.0,
+    avg_soil_ph: float = 6.8,
 ) -> GraderResult | None:
     """Evaluate an episode result against a specific task.
     
@@ -107,6 +112,11 @@ def evaluate_episode(
             total_yield=total_yield,
             total_fertilizer=total_fertilizer,
             total_pesticide=total_pesticide,
+        )
+    elif task_id == "task_expert_soil_health":
+        grader_result = grader_fn(
+            avg_soil_moisture=avg_soil_moisture,
+            avg_soil_ph=avg_soil_ph,
         )
     else:
         return None

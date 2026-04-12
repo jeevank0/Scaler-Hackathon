@@ -68,6 +68,14 @@ TASKS: List[TaskDefinition] = [
         difficulty="hard",
         grader="tasks.graders:grade_sustainability_balance",
     ),
+    TaskDefinition(
+        task_id="task_expert_soil_health",
+        name="Soil Health Monitoring",
+        description="Maintain optimal soil conditions by managing moisture and pH levels. "
+                    "Graded on soil pH stability and moisture retention within ideal ranges.",
+        difficulty="expert",
+        grader="tasks.graders:grade_soil_health",
+    ),
 ]
 
 

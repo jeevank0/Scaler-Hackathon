@@ -33,6 +33,8 @@ class GraderRequest(BaseModel):
     total_fertilizer: float = 0.0
     total_pesticide: float = 0.0
     total_steps: int = 0
+    avg_soil_moisture: float = 50.0
+    avg_soil_ph: float = 6.8
 
 
 class GraderResponse(BaseModel):
@@ -133,6 +135,8 @@ def grader(payload: GraderRequest) -> GraderResponse:
         total_fertilizer=payload.total_fertilizer,
         total_pesticide=payload.total_pesticide,
         total_steps=payload.total_steps,
+        avg_soil_moisture=payload.avg_soil_moisture,
+        avg_soil_ph=payload.avg_soil_ph,
     )
 
     if result is None:
