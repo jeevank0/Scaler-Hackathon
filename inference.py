@@ -20,6 +20,7 @@ except Exception:
 
 from env.farm_env import FarmAction, FarmEnv, FarmState
 from tasks.graders import grade_all
+from tasks.task_definitions import get_all_tasks
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 ENV_FILE = PROJECT_ROOT / ".env"
@@ -38,8 +39,27 @@ def require_env(name: str) -> str:
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1").strip()
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini").strip()
-TASK_NAME = os.getenv("TASK_NAME", "farm-yield-optimization").strip()
 BENCHMARK = os.getenv("BENCHMARK", "farmrl").strip()
+
+
+def resolve_task_ids() -> list[str]:
+    configured = os.getenv("TASK_NAMES", "").strip()
+    available_task_ids = [task["id"] for task in get_all_tasks()]
+
+    if configured:
+        requested = [item.strip() for item in configured.split(",") if item.strip()]
+        filtered = [task_id for task_id in requested if task_id in available_task_ids]
+        if filtered:
+            return filtered
+
+    legacy_single_task = os.getenv("TASK_NAME", "").strip()
+    if legacy_single_task and legacy_single_task in available_task_ids:
+        return [legacy_single_task]
+
+    return available_task_ids
+
+
+TASK_IDS = resolve_task_ids()
 
 
 def resolve_api_key() -> str:
@@ -253,9 +273,9 @@ def to_action_string(action: FarmAction) -> str:
     return json.dumps(action.model_dump(), separators=(",", ":"), sort_keys=True)
 
 
-def log_start() -> None:
+def log_start(task_id: str) -> None:
     print(
-        f"[START] task={TASK_NAME} env={BENCHMARK} model={MODEL_NAME}", flush=True)
+        f"[START] task={task_id} env={BENCHMARK} model={MODEL_NAME}", flush=True)
 
 
 def log_step(step: int, action: FarmAction, reward: float, done: bool, error: Optional[str]) -> None:
@@ -291,104 +311,115 @@ def run_inference() -> None:
             flush=True,
         )
 
-    total_reward = 0.0
-    total_yield = 0.0
-    total_fertilizer = 0.0
-    total_pesticide = 0.0
-    total_steps = 0
-    rewards: list[float] = []
-    recent_actions: list[dict[str, float]] = []
-    aborted = False
-    llm_attempts = 0
-    llm_successes = 0
-    llm_failures = 0
+    llm_attempts_total = 0
+    llm_successes_total = 0
+    llm_failures_total = 0
 
-    log_start()
+    for task_id in TASK_IDS:
+        total_reward = 0.0
+        total_yield = 0.0
+        total_fertilizer = 0.0
+        total_pesticide = 0.0
+        total_steps = 0
+        soil_moisture_sum = 0.0
+        soil_ph_sum = 0.0
+        soil_observation_count = 0
+        rewards: list[float] = []
+        recent_actions: list[dict[str, float]] = []
+        aborted = False
 
-    for episode in range(EPISODES):
-        state = env.reset(seed=42 + episode)
+        log_start(task_id=task_id)
 
-        for _ in range(STEPS_PER_EPISODE):
-            step_error: Optional[str] = None
+        for episode in range(EPISODES):
+            state = env.reset(seed=42 + episode)
 
-            llm_attempts += 1
-            try:
-                action = choose_action(
-                    client=client,
-                    state=state,
-                    step=total_steps + 1,
-                    recent_actions=recent_actions,
-                )
-                llm_successes += 1
-            except Exception as exc:
-                llm_failures += 1
-                step_error = f"llm_error:{exc.__class__.__name__}"
-                action = choose_fallback_action(state, recent_actions)
+            for _ in range(STEPS_PER_EPISODE):
+                step_error: Optional[str] = None
 
-            try:
-                step_result = env.step(action)
-            except Exception as exc:
-                aborted = True
+                llm_attempts_total += 1
+                try:
+                    action = choose_action(
+                        client=client,
+                        state=state,
+                        step=total_steps + 1,
+                        recent_actions=recent_actions,
+                    )
+                    llm_successes_total += 1
+                except Exception as exc:
+                    llm_failures_total += 1
+                    step_error = f"llm_error:{exc.__class__.__name__}"
+                    action = choose_fallback_action(state, recent_actions)
+
+                try:
+                    step_result = env.step(action)
+                except Exception as exc:
+                    aborted = True
+                    log_step(
+                        step=total_steps + 1,
+                        action=action,
+                        reward=0.0,
+                        done=True,
+                        error=f"env_error:{exc.__class__.__name__}",
+                    )
+                    break
+
+                total_steps += 1
+                total_reward += step_result.reward
+                total_yield += compute_yield_proxy(step_result.observation)
+                total_fertilizer += action.fertilizer
+                total_pesticide += action.pesticide
+                soil_moisture_sum += step_result.observation.soil_moisture
+                soil_ph_sum += step_result.observation.soil_ph
+                soil_observation_count += 1
+                rewards.append(step_result.reward)
+                recent_actions.append(action.model_dump())
+
                 log_step(
-                    step=total_steps + 1,
+                    step=total_steps,
                     action=action,
-                    reward=0.0,
-                    done=True,
-                    error=f"env_error:{exc.__class__.__name__}",
+                    reward=step_result.reward,
+                    done=step_result.done,
+                    error=step_error,
                 )
+                state = step_result.observation
+
+                if step_result.done:
+                    break
+
+            if aborted:
                 break
 
-            total_steps += 1
-            total_reward += step_result.reward
-            total_yield += compute_yield_proxy(step_result.observation)
-            total_fertilizer += action.fertilizer
-            total_pesticide += action.pesticide
-            rewards.append(step_result.reward)
-            recent_actions.append(action.model_dump())
+        avg_soil_moisture = (
+            soil_moisture_sum / soil_observation_count if soil_observation_count > 0 else 50.0
+        )
+        avg_soil_ph = soil_ph_sum / soil_observation_count if soil_observation_count > 0 else 6.8
 
-            log_step(
-                step=total_steps,
-                action=action,
-                reward=step_result.reward,
-                done=step_result.done,
-                error=step_error,
-            )
-            state = step_result.observation
+        task_scores = grade_all(
+            total_reward=total_reward,
+            total_yield=total_yield,
+            total_fertilizer=total_fertilizer,
+            total_pesticide=total_pesticide,
+            total_steps=total_steps,
+            avg_soil_moisture=avg_soil_moisture,
+            avg_soil_ph=avg_soil_ph,
+        )
 
-            if step_result.done:
-                break
+        task_result = task_scores.get(task_id, {"score": 0.001})
+        try:
+            task_score = clamp_score(float(task_result.get("score", 0.001)))
+        except Exception:
+            task_score = 0.001
 
-        if aborted:
-            break
+        success = task_score >= SUCCESS_SCORE_THRESHOLD
+        log_end(success=success, steps=total_steps, score=task_score, rewards=rewards)
 
-    if llm_attempts == 0:
+    if llm_attempts_total == 0:
         raise RuntimeError("No LLM calls were attempted during inference.")
 
     print(
-        f"[INFO] llm_calls attempts={llm_attempts} successes={llm_successes} failures={llm_failures}",
+        f"[INFO] llm_calls attempts={llm_attempts_total} successes={llm_successes_total} failures={llm_failures_total}",
         flush=True,
     )
-
-    task_scores = grade_all(
-        total_reward=total_reward,
-        total_yield=total_yield,
-        total_fertilizer=total_fertilizer,
-        total_pesticide=total_pesticide,
-        total_steps=total_steps,
-    )
-    score_values = []
-    for result in task_scores.values():
-        try:
-            score_values.append(clamp_score(float(result.get("score", 0.0))))
-        except Exception:
-            score_values.append(0.001)
-
-    overall_score = sum(score_values) / \
-        len(score_values) if score_values else 0.0
-    overall_score = clamp_score(overall_score)
-    success = overall_score >= SUCCESS_SCORE_THRESHOLD
-    log_end(success=success, steps=total_steps,
-            score=overall_score, rewards=rewards)
 
 
 def main() -> int:
