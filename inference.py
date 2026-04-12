@@ -372,8 +372,15 @@ def run_inference() -> None:
         total_pesticide=total_pesticide,
         total_steps=total_steps,
     )
-    overall_score = sum(item["score"]
-                        for item in task_scores) / len(task_scores)
+    score_values = []
+    for result in task_scores.values():
+        try:
+            score_values.append(float(result.get("score", 0.0)))
+        except Exception:
+            score_values.append(0.0)
+
+    overall_score = sum(score_values) / \
+        len(score_values) if score_values else 0.0
     overall_score = clamp(overall_score, 0.0, 1.0)
     success = overall_score >= SUCCESS_SCORE_THRESHOLD
     log_end(success=success, steps=total_steps,
