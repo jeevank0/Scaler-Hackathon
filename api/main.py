@@ -5,6 +5,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from env.farm_env import FarmAction, FarmEnv, FarmState, FarmStepResult
+from tasks.task_definitions import get_all_tasks
+from tasks.grader_service import evaluate_episode
 
 app = FastAPI(title="FarmRL OpenEnv API", version="0.1.0")
 DATASET_PATH = Path(__file__).resolve(
@@ -21,6 +23,25 @@ class MCPRequest(BaseModel):
     id: int | str | None = None
     method: str | None = None
     params: dict[str, Any] | None = None
+
+
+class GraderRequest(BaseModel):
+    """Episode result to evaluate against a task."""
+    task_id: str
+    total_reward: float = 0.0
+    total_yield: float = 0.0
+    total_fertilizer: float = 0.0
+    total_pesticide: float = 0.0
+    total_steps: int = 0
+
+
+class GraderResponse(BaseModel):
+    """Evaluation result with score and pass status."""
+    task_id: str
+    score: float
+    passed: bool
+    feedback: str
+    difficulty: str
 
 
 @app.post("/reset", response_model=FarmState)
@@ -66,6 +87,53 @@ def schema() -> dict[str, dict[str, Any]]:
         "observation": state_schema,
         "state": state_schema,
     }
+
+
+@app.get("/tasks")
+def tasks() -> dict[str, Any]:
+    """Return all available tasks with grader associations.
+    
+    OpenEnv requires each submission to declare minimum 3 tasks,
+    each associated with a grading function.
+    """
+    return {
+        "tasks": get_all_tasks(),
+    }
+
+
+@app.post("/grader", response_model=GraderResponse)
+def grader(payload: GraderRequest) -> GraderResponse:
+    """Evaluate an episode result against a specific task.
+    
+    Accepts episode metrics, normalizes the reward to a standard scoring scale
+    ([0, 1]), evaluates against difficulty-level thresholds, and returns the
+    normalized score, pass status, and feedback.
+    
+    Args:
+        payload: Episode result with task_id and episode metrics
+    
+    Returns:
+        GraderResponse with score, pass status, and feedback
+    
+    Raises:
+        HTTPException 400: If task_id is not recognized
+    """
+    result = evaluate_episode(
+        task_id=payload.task_id,
+        total_reward=payload.total_reward,
+        total_yield=payload.total_yield,
+        total_fertilizer=payload.total_fertilizer,
+        total_pesticide=payload.total_pesticide,
+        total_steps=payload.total_steps,
+    )
+    
+    if result is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task '{payload.task_id}' not found or grader unavailable.",
+        )
+    
+    return GraderResponse(**result.to_dict())
 
 
 @app.post("/mcp")
