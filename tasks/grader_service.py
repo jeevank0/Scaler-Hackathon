@@ -17,6 +17,11 @@ from tasks.graders import (
 from tasks.task_definitions import get_task_by_id
 
 
+def _clamp_score(value: float) -> float:
+    """Clamp score values to the validator-safe interval."""
+    return max(0.001, min(0.994, float(value)))
+
+
 # Difficulty-level specific pass thresholds (score in [0, 1])
 PASS_THRESHOLDS = {
     "easy": 0.30,
@@ -121,7 +126,7 @@ def evaluate_episode(
     else:
         return None
     
-    score = grader_result.get("score", 0.0)
+    score = _clamp_score(grader_result.get("score", 0.0))
     passed = score >= pass_threshold
     
     # Generate feedback based on score and difficulty

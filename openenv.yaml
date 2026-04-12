@@ -93,8 +93,17 @@ tasks:
     grader_name: grade_sustainability_balance
     grader_endpoint: /grader
     grader_enabled: true
+  - id: task_expert_soil_health
+    difficulty: expert
+    description: Maintain soil moisture and pH inside optimal agronomic bands.
+    grader: tasks.graders:grade_soil_health
+    grader_fn: tasks.graders:grade_soil_health
+    grader_name: grade_soil_health
+    grader_endpoint: /grader
+    grader_enabled: true
 
 graders:
   task_easy_yield: tasks.graders:grade_yield_performance
   task_medium_chemical_efficiency: tasks.graders:grade_chemical_efficiency
   task_hard_sustainability_balance: tasks.graders:grade_sustainability_balance
+  task_expert_soil_health: tasks.graders:grade_soil_health

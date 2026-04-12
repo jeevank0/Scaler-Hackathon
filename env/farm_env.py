@@ -96,18 +96,26 @@ class FarmEnv:
         return float(np.clip(value, low, high))
 
     @staticmethod
-    def _compute_reward(state: FarmState, action: FarmAction, day: int) -> tuple[float, dict[str, float]]:
-        moisture_score = np.clip(state.soil_moisture / 100.0, 0.0, 1.0)
-        temperature_factor = np.clip(
-            1.0 - abs(state.temperature - 26.0) / 16.0, 0.0, 1.0)
-        rainfall_factor = np.clip(
-            1.0 - abs(state.rainfall - 60.0) / 60.0, 0.0, 1.0)
+    def _clamp_score(value: float) -> float:
+        return float(max(0.001, min(0.994, float(value))))
 
-        yield_score = (
+    @staticmethod
+    def _compute_reward(state: FarmState, action: FarmAction, day: int) -> tuple[float, dict[str, float]]:
+        moisture_score = FarmEnv._clamp_score(
+            np.clip(state.soil_moisture / 100.0, 0.0, 1.0)
+        )
+        temperature_factor = FarmEnv._clamp_score(
+            np.clip(1.0 - abs(state.temperature - 26.0) / 16.0, 0.0, 1.0)
+        )
+        rainfall_factor = FarmEnv._clamp_score(
+            np.clip(1.0 - abs(state.rainfall - 60.0) / 60.0, 0.0, 1.0)
+        )
+
+        yield_score = FarmEnv._clamp_score((
             0.4 * float(moisture_score)
             + 0.3 * float(temperature_factor)
             + 0.3 * float(rainfall_factor)
-        )
+        ))
 
         resource_penalty = 0.03 * \
             (action.fertilizer**1.2) + 0.04 * (action.pesticide**1.3)

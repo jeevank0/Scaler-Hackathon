@@ -67,6 +67,10 @@ def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
+def clamp_score(score: float) -> float:
+    return max(0.001, min(0.994, float(score)))
+
+
 def compute_yield_proxy(state: FarmState) -> float:
     moisture_score = clamp(state.soil_moisture / 100.0, 0.0, 1.0)
     temperature_factor = clamp(
@@ -375,13 +379,13 @@ def run_inference() -> None:
     score_values = []
     for result in task_scores.values():
         try:
-            score_values.append(float(result.get("score", 0.0)))
+            score_values.append(clamp_score(float(result.get("score", 0.0))))
         except Exception:
-            score_values.append(0.0)
+            score_values.append(0.001)
 
     overall_score = sum(score_values) / \
         len(score_values) if score_values else 0.0
-    overall_score = clamp(overall_score, 0.0, 1.0)
+    overall_score = clamp_score(overall_score)
     success = overall_score >= SUCCESS_SCORE_THRESHOLD
     log_end(success=success, steps=total_steps,
             score=overall_score, rewards=rewards)
@@ -397,7 +401,7 @@ def main() -> int:
             f"{exc.__class__.__name__}:{exc}",
         ).strip()
         print(f"[FATAL] error={fatal_error}", flush=True)
-        log_end(success=False, steps=0, score=0.0, rewards=[])
+        log_end(success=False, steps=0, score=0.001, rewards=[])
         return 1
     return 0
 

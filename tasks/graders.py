@@ -8,13 +8,9 @@ from __future__ import annotations
 from typing import Dict
 
 
-def _clamp01(value: float) -> float:
-    """Clamp a numeric value to the [0, 1] interval."""
-    if value < 0.0:
-        return 0.0
-    if value > 1.0:
-        return 1.0
-    return value
+def _clamp_score(value: float) -> float:
+    """Clamp score values to the validator-safe interval."""
+    return max(0.001, min(0.994, float(value)))
 
 
 def grade_yield_performance(
@@ -26,7 +22,7 @@ def grade_yield_performance(
     Scale factor keeps scores in a useful range while staying normalized.
     """
     avg_reward = total_reward / total_steps if total_steps > 0 else 0.0
-    score = _clamp01(avg_reward / 10.0)
+    score = _clamp_score(avg_reward / 10.0)
     return {
         "task_id": "task_easy_yield",
         "score": score,
@@ -41,7 +37,7 @@ def grade_chemical_efficiency(
     """Grade chemical efficiency by penalizing chemical use per step."""
     steps = total_steps if total_steps > 0 else 1
     chemical_per_step = (total_fertilizer + total_pesticide) / steps
-    score = 1.0 - _clamp01(chemical_per_step / 10.0)
+    score = _clamp_score(1.0 - _clamp_score(chemical_per_step / 10.0))
     return {
         "task_id": "task_medium_chemical_efficiency",
         "score": score,
@@ -55,7 +51,7 @@ def grade_sustainability_balance(
 ) -> Dict[str, float | str]:
     """Grade sustainability using yield-to-chemical-input ratio."""
     ratio = total_yield / (total_fertilizer + total_pesticide + 1.0)
-    score = _clamp01(ratio / 5.0)
+    score = _clamp_score(ratio / 5.0)
     return {
         "task_id": "task_hard_sustainability_balance",
         "score": score,
@@ -75,15 +71,15 @@ def grade_soil_health(
     # Moisture score: peaks at 50%, penalizes extremes
     moisture_ideal = 50.0
     moisture_deviation = abs(avg_soil_moisture - moisture_ideal)
-    moisture_score = 1.0 - _clamp01(moisture_deviation / 50.0)
+    moisture_score = _clamp_score(1.0 - _clamp_score(moisture_deviation / 50.0))
     
     # pH score: peaks at 6.8 (neutral), acceptable range 6.0-7.5
     ph_ideal = 6.8
     ph_deviation = abs(avg_soil_ph - ph_ideal)
-    ph_score = 1.0 - _clamp01(ph_deviation / 1.5)
+    ph_score = _clamp_score(1.0 - _clamp_score(ph_deviation / 1.5))
     
     # Combined score (equal weight)
-    score = _clamp01((moisture_score + ph_score) / 2.0)
+    score = _clamp_score((moisture_score + ph_score) / 2.0)
     
     return {
         "task_id": "task_expert_soil_health",
