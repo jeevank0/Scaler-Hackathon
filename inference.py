@@ -7,8 +7,16 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
-from openai import OpenAI
+try:
+    from dotenv import load_dotenv
+except Exception:
+    def load_dotenv(*_args: Any, **_kwargs: Any) -> bool:
+        return False
+
+try:
+    from openai import OpenAI
+except Exception:
+    OpenAI = None  # type: ignore[assignment]
 
 from env.farm_env import FarmAction, FarmEnv, FarmState
 from tasks.graders import grade_all
@@ -95,7 +103,10 @@ def build_prompt(state: FarmState, step: int, recent_actions: list[dict[str, flo
     )
 
 
-def build_client() -> Optional[OpenAI]:
+def build_client() -> Optional[Any]:
+    if OpenAI is None:
+        raise RuntimeError("openai_sdk_unavailable")
+
     if not API_BASE_URL:
         raise RuntimeError(
             "Missing required environment variable 'API_BASE_URL'.")
@@ -195,7 +206,7 @@ def choose_fallback_action(state: FarmState, recent_actions: list[dict[str, floa
 
 
 def choose_action(
-    client: Optional[OpenAI],
+    client: Optional[Any],
     state: FarmState,
     step: int,
     recent_actions: list[dict[str, float]],
