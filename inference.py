@@ -5,6 +5,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -31,7 +32,16 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1").strip()
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini").strip()
 TASK_NAME = os.getenv("TASK_NAME", "farm-yield-optimization").strip()
 BENCHMARK = os.getenv("BENCHMARK", "farmrl").strip()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+
+
+def resolve_api_key() -> str:
+    api_key = os.getenv("API_KEY", "").strip()
+    if api_key:
+        return api_key
+    return os.getenv("OPENAI_API_KEY", "").strip()
+
+
+API_KEY = resolve_api_key()
 
 PLACEHOLDER_TOKENS = {
     "your_openai_api_key_here",
@@ -86,15 +96,26 @@ def build_prompt(state: FarmState, step: int, recent_actions: list[dict[str, flo
 
 
 def build_client() -> Optional[OpenAI]:
+    if not API_BASE_URL:
+        raise RuntimeError("Missing required environment variable 'API_BASE_URL'.")
+
     base_lower = API_BASE_URL.lower()
     if "huggingface.co" in base_lower:
-        print("[WARN] HuggingFace router detected, skipping LLM", flush=True)
-        return None
+        raise RuntimeError(
+            "Disallowed API_BASE_URL host 'huggingface.co' for submission."
+        )
 
-    api_key = OPENAI_API_KEY
+    api_key = API_KEY
     if not api_key or api_key.lower() in PLACEHOLDER_TOKENS:
-        print("[WARN] OPENAI_API_KEY not found, running in fallback mode", flush=True)
-        return None
+        raise RuntimeError(
+            "Missing API key. Expected API_KEY (or OPENAI_API_KEY compatibility fallback)."
+        )
+
+    base_host = urlparse(API_BASE_URL).netloc or API_BASE_URL
+    print(
+        f"[INFO] llm_config base_host={base_host} model={MODEL_NAME}",
+        flush=True,
+    )
     return OpenAI(base_url=API_BASE_URL, api_key=api_key)
 
 
@@ -242,19 +263,7 @@ def run_inference() -> None:
     dataset_path = Path(__file__).resolve().parent / \
         "farmer_advisor_dataset.csv"
     env = FarmEnv(dataset_path=dataset_path, seed=42, max_days=30)
-    client: Optional[OpenAI] = None
-    startup_error: Optional[str] = None
-
-    try:
-        client = build_client()
-    except Exception as exc:
-        startup_error = re.sub(
-            r"\s+",
-            " ",
-            f"{exc.__class__.__name__}:{exc}",
-        ).strip()
-        print(
-            f"[WARN] llm_client_unavailable error={startup_error}", flush=True)
+    client = build_client()
 
     total_reward = 0.0
     total_yield = 0.0
@@ -264,6 +273,9 @@ def run_inference() -> None:
     rewards: list[float] = []
     recent_actions: list[dict[str, float]] = []
     aborted = False
+    llm_attempts = 0
+    llm_successes = 0
+    llm_failures = 0
 
     log_start()
 
@@ -273,27 +285,19 @@ def run_inference() -> None:
         for _ in range(STEPS_PER_EPISODE):
             step_error: Optional[str] = None
 
-            if client is not None:
-                try:
-                    action = choose_action(
-                        client=client,
-                        state=state,
-                        step=total_steps + 1,
-                        recent_actions=recent_actions,
-                    )
-                except Exception as exc:
-                    step_error = f"llm_error:{exc.__class__.__name__}"
-                    action = choose_fallback_action(
-                        state=state,
-                        recent_actions=recent_actions,
-                    )
-            else:
-                action = choose_fallback_action(
+            llm_attempts += 1
+            try:
+                action = choose_action(
+                    client=client,
                     state=state,
+                    step=total_steps + 1,
                     recent_actions=recent_actions,
                 )
-                if startup_error and total_steps == 0 and episode == 0:
-                    step_error = f"fallback:{startup_error}"
+                llm_successes += 1
+            except Exception as exc:
+                llm_failures += 1
+                step_error = f"llm_error:{exc.__class__.__name__}"
+                raise RuntimeError(step_error) from exc
 
             try:
                 step_result = env.step(action)
@@ -331,6 +335,14 @@ def run_inference() -> None:
         if aborted:
             break
 
+    if llm_attempts == 0:
+        raise RuntimeError("No LLM calls were attempted during inference.")
+
+    print(
+        f"[INFO] llm_calls attempts={llm_attempts} successes={llm_successes} failures={llm_failures}",
+        flush=True,
+    )
+
     task_scores = grade_all(
         total_reward=total_reward,
         total_yield=total_yield,
@@ -357,6 +369,7 @@ def main() -> int:
         ).strip()
         print(f"[FATAL] error={fatal_error}", flush=True)
         log_end(success=False, steps=0, score=0.0, rewards=[])
+        return 1
     return 0
 
 
