@@ -3,6 +3,11 @@ import os
 from api.main import app
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"status": "running"}
+
+
 def main() -> None:
     import uvicorn
 
