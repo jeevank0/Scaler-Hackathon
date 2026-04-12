@@ -72,9 +72,12 @@ tasks:
   - id: task_easy_yield
     difficulty: easy
     description: Maximize agronomic yield performance using normalized total reward.
+    grader: grade_yield_performance
   - id: task_medium_chemical_efficiency
     difficulty: medium
     description: Minimize total fertilizer and pesticide while maintaining productivity.
+    grader: grade_chemical_efficiency
   - id: task_hard_sustainability_balance
     difficulty: hard
     description: Optimize the long-term yield-to-chemical-use balance ratio.
+    grader: grade_sustainability_balance

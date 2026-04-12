@@ -10,19 +10,21 @@ from typing import Dict, List, Any
 
 class TaskDefinition:
     """Represents a task with metadata and grader association."""
-    
+
     def __init__(
         self,
         task_id: str,
         name: str,
         description: str,
         difficulty: str,
+        grader: str,
     ):
         self.task_id = task_id
         self.name = name
         self.description = description
         self.difficulty = difficulty
-    
+        self.grader = grader
+
     def to_dict(self) -> Dict[str, str]:
         """Convert to OpenEnv task definition format."""
         return {
@@ -30,6 +32,7 @@ class TaskDefinition:
             "name": self.name,
             "description": self.description,
             "difficulty": self.difficulty,
+            "grader": self.grader,
         }
 
 
@@ -41,6 +44,7 @@ TASKS: List[TaskDefinition] = [
         description="Maximize crop yield through optimal irrigation and environmental management. "
                     "Graded on average reward per step.",
         difficulty="easy",
+        grader="grade_yield_performance",
     ),
     TaskDefinition(
         task_id="task_medium_chemical_efficiency",
@@ -48,6 +52,7 @@ TASKS: List[TaskDefinition] = [
         description="Minimize fertilizer and pesticide usage while maintaining acceptable yields. "
                     "Graded on chemical use efficiency.",
         difficulty="medium",
+        grader="grade_chemical_efficiency",
     ),
     TaskDefinition(
         task_id="task_hard_sustainability_balance",
@@ -55,6 +60,7 @@ TASKS: List[TaskDefinition] = [
         description="Achieve top-tier sustainability by maximizing yield-to-chemical-input ratio. "
                     "Graded on sustainability metrics.",
         difficulty="hard",
+        grader="grade_sustainability_balance",
     ),
 ]
 
